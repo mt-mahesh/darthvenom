@@ -1,0 +1,68 @@
+
+def lldb_cmd(cmd):
+    return_obj = lldb.SBCommandReturnObject()
+    ci = debugger.GetCommandInterpreter()
+    ci.HandleCommand(cmd, return_obj)
+    return print(return_obj.GetOutput())
+import lldb
+
+BIN_PATH = '/home/kali/Envs/env1/trycrackme'
+arch ='x86_64'
+debugger = lldb.SBDebugger.Create()
+target = debugger.CreateTargetWithFileAndArch(BIN_PATH, arch)
+
+lldb_cmd('disassemble -F intel -n main')
+
+import angr, binascii 
+
+proj = angr.Project('/home/kali/Envs/env1/trycrackme', load_options={'auto_load_libs': False})
+proj.loader.all_objects #Not to be confused with the initialization of the project's entry state.
+
+BASE_ADDR = proj.loader.main_object.min_addr 
+print("Initial addr by angr "+ str(BASE_ADDR))
+TARGET_ADDR = BASE_ADDR + 0x12fd
+print("Should go to  "+ str(TARGET_ADDR))
+AVOID_ADDR = BASE_ADDR + 0x12e2
+print("To be avoided "+str(AVOID_ADDR))
+
+state = proj.factory.entry_state()
+
+#Just a Filler code for viewing all the available functions extracted by angr using project state :)
+
+idfer = proj.analyses.Identifier()
+for funcInfo in idfer.func_info:
+    print(hex(funcInfo.addr), funcInfo.name)
+
+cfg = proj.analyses.CFGEmulated(keep_state=True, state_add_options={angr.options.LAZY_SOLVES})
+
+entry_state = cfg.kb.functions[proj.entry]
+
+simgr = proj.factory.simulation_manager()
+simgr.explore(find=TARGET_ADDR, avoid=AVOID_ADDR)
+
+print(simgr.found[0].posix.dumps(0))
+print(simgr.avoid[0].posix.dumps(0))
+
+
+
+!strings trycrackme
+
+simgr.explore(find=lambda s:b'[+] Correct key!' in s.posix.dumps(1))
+
+simgr.found[0].posix.dumps(0)
+
+pathgroup = proj.factory.simulation_manager(state)
+pathgroup.run(until=lambda len_pg: len(len_pg.active)>1) 
+
+print(pathgroup.active[0].posix.dumps(0))
+print(pathgroup.active[1].posix.dumps(1))
+
+key = str(simgr.found[0].posix.dumps(0))[2:22]
+
+print(key)
+
+!echo {key} | /home/kali/Envs/env1/trycrackme
+
+print(entry_state.has_unresolved_calls), print(entry_state.has_unresolved_jumps)
+
+print(entry_state.callable)
